@@ -3,7 +3,6 @@
 # =========================
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-
 import pandas as pd
 
 from app.model import IDSModel
@@ -14,11 +13,7 @@ from app.config import *
 # =========================
 app = FastAPI(title="IDS PME - Cyber Detection API")
 
-# =========================
-# LOAD MODEL (UNE FOIS)
-# =========================
 ids = IDSModel()
-
 
 # =========================
 # INPUT SCHEMA
@@ -30,14 +25,12 @@ class NetworkFlow(BaseModel):
     total_bwd_packets: int
     flow_bytes_s: float
 
-
 # =========================
 # HEALTH CHECK
 # =========================
 @app.get("/")
 def health():
     return {"status": "API opérationnelle"}
-
 
 # =========================
 # FEATURE ENGINEERING
@@ -66,7 +59,6 @@ def build_features(flow: NetworkFlow):
 
     return pd.DataFrame([data]), packets_s, ratio
 
-
 # =========================
 # PREDICTION ENDPOINT
 # =========================
@@ -74,20 +66,17 @@ def build_features(flow: NetworkFlow):
 def predict(flow: NetworkFlow):
 
     try:
-        # -------- features --------
         df, packets_s, ratio = build_features(flow)
 
-        # -------- ML prediction --------
         result = ids.predict(df)
 
         verdict = result["verdict"]
         confidence = result["confidence"]
 
         # =========================
-        # 🧠 LOGIQUE PME
+        # 🔥 PRIORITÉ COMPORTEMENT (IMPORTANT)
         # =========================
 
-        # comportement
         is_ddos = (
             packets_s > CRITICAL_PACKET_RATE and
             flow.total_bwd_packets == 0
@@ -99,37 +88,46 @@ def predict(flow: NetworkFlow):
         )
 
         # =========================
-        # DECISION ENGINE
+        # 🔥 DECISION ENGINE CORRIGÉ
         # =========================
-        if verdict != "BENIGN":
+
+        # 1️⃣ CAS CRITIQUE → override total
+        if is_ddos:
+            action = "BLOCK"
+            risk = "CRITICAL"
+
+        # 2️⃣ CAS ML attaque
+        elif verdict != "BENIGN":
+
             if confidence >= THRESHOLD_HIGH:
                 action = "BLOCK"
                 risk = "HIGH"
+
             elif confidence >= THRESHOLD_LOW:
                 action = "ALERT"
                 risk = "MEDIUM"
+
             else:
                 action = "MONITOR"
                 risk = "LOW"
 
+        # 3️⃣ CAS comportement suspect
+        elif is_suspicious:
+            action = "ALERT"
+            risk = "MEDIUM"
+
+        # 4️⃣ CAS normal
         else:
-            if is_ddos:
-                action = "BLOCK"
-                risk = "CRITICAL"
-            elif is_suspicious:
-                action = "ALERT"
-                risk = "MEDIUM"
-            else:
-                action = "ALLOW"
-                risk = "LOW"
+            action = "ALLOW"
+            risk = "LOW"
 
         # =========================
-        # CYBER SCORE (0–100)
+        # 🔥 SCORE AMÉLIORÉ
         # =========================
         score = min(100, int(
-            (packets_s / 1_000_000) * 40 +
-            abs(ratio - 1) * 20 +
-            (1 - confidence) * 40
+            (packets_s / 1_000_000) * 50 +   # poids + fort
+            abs(ratio - 1) * 25 +
+            (1 - confidence) * 25
         ))
 
         # =========================
@@ -143,7 +141,11 @@ def predict(flow: NetworkFlow):
             "action": action,
             "details": {
                 "packets_per_sec": round(packets_s, 2),
-                "fwd_bwd_ratio": round(ratio, 2)
+                "fwd_bwd_ratio": round(ratio, 2),
+                "flags": {
+                    "ddos": is_ddos,
+                    "suspicious": is_suspicious
+                }
             }
         }
 

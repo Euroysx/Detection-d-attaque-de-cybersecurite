@@ -1,0 +1,32 @@
+1. DDoS léger
+{
+  "destination_port": 443,
+  "flow_duration": 5000,
+  "total_fwd_packets": 200000,
+  "total_bwd_packets": 0,
+  "flow_bytes_s": 50000000
+}
+
+résultat attendu : ALERT / BLOCK
+
+2. Scan (suspicious)
+{
+  "destination_port": 22,
+  "flow_duration": 100000,
+  "total_fwd_packets": 10000,
+  "total_bwd_packets": 10,
+  "flow_bytes_s": 1000000
+}
+
+ratio élevé → ALERT
+
+3. Trafic normal
+{
+  "destination_port": 443,
+  "flow_duration": 200000,
+  "total_fwd_packets": 5000,
+  "total_bwd_packets": 4800,
+  "flow_bytes_s": 2000000
+}
+
+ALLOW
