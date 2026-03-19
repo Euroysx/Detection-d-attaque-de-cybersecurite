@@ -1,0 +1,17 @@
+Detection-d-attaque-de-cybersecurite/
+│
+├── app/
+│   ├── main.py
+|   ├── main_2.py
+│   ├── model.py
+│   ├── features.py
+│   ├── schemas.py
+│   └── config.py
+│
+├── models/
+│   ├── ids_xgboost.pkl
+│   ├── ids_scaler.pkl
+│   ├── ids_label_encoder.pkl
+│   └── feature_names.pkl
+│
+├── requirements.txt
