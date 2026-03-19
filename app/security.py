@@ -1,5 +1,12 @@
+# =========================
+# LIBRARIES
+# =========================
 from app.config import *
 
+
+# =========================
+# BEHAVIOR DETECTION
+# =========================
 def detect_behavior(packets_s, ratio, flow):
 
     is_ddos = (
@@ -21,11 +28,16 @@ def detect_behavior(packets_s, ratio, flow):
     return is_ddos, is_scan, is_bruteforce
 
 
+# =========================
+# RISK ENGINE
+# =========================
 def compute_risk(verdict, confidence, is_ddos, is_scan, is_bruteforce):
 
+    # priorité sécurité
     if is_ddos:
         return "CRITICAL"
 
+    # ML attack
     if verdict != "BENIGN":
         if confidence >= THRESHOLD_HIGH:
             return "HIGH"
@@ -34,12 +46,16 @@ def compute_risk(verdict, confidence, is_ddos, is_scan, is_bruteforce):
         else:
             return "LOW"
 
+    # comportement suspect
     if is_scan or is_bruteforce:
         return "MEDIUM"
 
     return "LOW"
 
 
+# =========================
+# DECISION ENGINE
+# =========================
 def decide_action(verdict, risk):
 
     if risk == "CRITICAL":
@@ -59,12 +75,19 @@ def decide_action(verdict, risk):
     return "ALLOW"
 
 
+# =========================
+# SCORING ENGINE (CORRIGÉ)
+# =========================
 def compute_score(packets_s, ratio, confidence):
 
+    # protection réaliste
+    if ratio == float("inf") or ratio > 1e6:
+        ratio = 1e6
+
     score = (
-        (packets_s / 1_000_000) * 40 +
-        abs(ratio - 1) * 20 +
-        (1 - confidence) * 40
+        (packets_s / 1_000_000) * 50 +   # poids plus réaliste
+        abs(ratio - 1) * 25 +
+        (1 - confidence) * 25
     )
 
     return min(100, int(score))

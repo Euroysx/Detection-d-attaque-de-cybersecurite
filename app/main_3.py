@@ -6,13 +6,17 @@ from pydantic import BaseModel
 import pandas as pd
 
 from app.model import IDSModel
-from app.config import *
+from app.config import (
+    CRITICAL_PACKET_RATE,
+    SUSPICIOUS_PACKET_RATE,
+    THRESHOLD_LOW,
+    THRESHOLD_HIGH
+)
 
 # =========================
 # INIT APP
 # =========================
 app = FastAPI(title="IDS PME - Cyber Detection API")
-
 ids = IDSModel()
 
 # =========================
@@ -33,18 +37,36 @@ def health():
     return {"status": "API opérationnelle"}
 
 # =========================
+# INPUT VALIDATION (CRITIQUE)
+# =========================
+def validate_input(flow: NetworkFlow):
+
+    if flow.flow_duration <= 0:
+        return "Invalid duration"
+
+    if flow.destination_port < 0 or flow.destination_port > 65535:
+        return "Invalid port"
+
+    if flow.total_fwd_packets == 0 and flow.total_bwd_packets == 0:
+        return "Empty traffic"
+
+    return None
+
+# =========================
 # FEATURE ENGINEERING
 # =========================
 def build_features(flow: NetworkFlow):
 
-    total_packets = flow.total_fwd_packets + flow.total_bwd_packets
-    total_packets = max(total_packets, 1)
-
+    total_packets = max(flow.total_fwd_packets + flow.total_bwd_packets, 1)
     duration = max(flow.flow_duration, 1)
 
     packets_s = total_packets / (duration / 1_000_000)
     avg_packet_size = flow.flow_bytes_s / total_packets
-    ratio = flow.total_fwd_packets / max(flow.total_bwd_packets, 1)
+
+    if flow.total_bwd_packets == 0:
+        ratio = float("inf")
+    else:
+        ratio = flow.total_fwd_packets / flow.total_bwd_packets
 
     data = {
         'Destination Port': flow.destination_port,
@@ -60,79 +82,125 @@ def build_features(flow: NetworkFlow):
     return pd.DataFrame([data]), packets_s, ratio
 
 # =========================
+# BEHAVIOR ENGINE
+# =========================
+def detect_behavior(flow, packets_s, ratio):
+
+    is_ddos = (
+        packets_s > CRITICAL_PACKET_RATE and
+        flow.total_bwd_packets == 0
+    )
+
+    is_scan = (
+        packets_s > SUSPICIOUS_PACKET_RATE and
+        (ratio > 10 or ratio < 0.1)
+    )
+
+    is_bruteforce = (
+        flow.destination_port in [21, 22, 23] and
+        packets_s > 10000 and
+        ratio > 5
+    )
+
+    return is_ddos, is_scan, is_bruteforce
+
+# =========================
+# DECISION ENGINE
+# =========================
+def decide(verdict, confidence, packets_s, is_ddos, is_scan, is_bruteforce):
+
+    if is_ddos:
+        return "CRITICAL", "BLOCK"
+
+    if verdict != "BENIGN":
+
+        if confidence >= THRESHOLD_HIGH:
+            return "HIGH", "BLOCK"
+
+        elif confidence >= THRESHOLD_LOW:
+            return "MEDIUM", "ALERT"
+
+        else:
+            return "LOW", "MONITOR"
+
+    if is_bruteforce:
+        if packets_s > 50000:
+            return "HIGH", "BLOCK"
+        else:
+            return "MEDIUM", "ALERT"
+
+    if is_scan:
+        return "MEDIUM", "ALERT"
+
+    return "LOW", "ALLOW"
+
+# =========================
+# SCORING ENGINE (CORRIGÉ)
+# =========================
+def compute_score(packets_s, ratio, confidence):
+
+    # clamp ratio
+    if ratio == float("inf"):
+        safe_ratio = 100
+    else:
+        safe_ratio = min(ratio, 100)
+
+    score = (
+        (packets_s / 1_000_000) * 50 +
+        min(abs(safe_ratio - 1), 10) * 10 +
+        (1 - confidence) * 20
+    )
+
+    score = min(100, int(score))
+
+    # cohérence avec ML
+    if confidence > 0.8 and score > 80:
+        score = 70
+
+    return score
+
+# =========================
 # PREDICTION ENDPOINT
 # =========================
 @app.post("/predict")
 def predict(flow: NetworkFlow):
 
     try:
+        # -------- validation --------
+        error = validate_input(flow)
+        if error:
+            return {
+                "verdict": "INVALID",
+                "confidence": "0%",
+                "risk_level": "LOW",
+                "attack_score": 0,
+                "action": "REJECT",
+                "details": {"reason": error}
+            }
+
+        # -------- features --------
         df, packets_s, ratio = build_features(flow)
 
-        result = ids.predict(df)
+        # -------- ML --------
+        verdict, confidence = ids.predict(df)
 
-        verdict = result["verdict"]
-        confidence = result["confidence"]
+        # -------- behavior --------
+        is_ddos, is_scan, is_bruteforce = detect_behavior(flow, packets_s, ratio)
 
-        # =========================
-        # 🔥 PRIORITÉ COMPORTEMENT (IMPORTANT)
-        # =========================
-
-        is_ddos = (
-            packets_s > CRITICAL_PACKET_RATE and
-            flow.total_bwd_packets == 0
+        # -------- decision --------
+        risk, action = decide(
+            verdict,
+            confidence,
+            packets_s,
+            is_ddos,
+            is_scan,
+            is_bruteforce
         )
 
-        is_suspicious = (
-            packets_s > 300_000 and
-            (ratio > 10 or ratio < 0.1)
-        )
+        # -------- score --------
+        score = compute_score(packets_s, ratio, confidence)
 
-        # =========================
-        # 🔥 DECISION ENGINE CORRIGÉ
-        # =========================
-
-        # 1️⃣ CAS CRITIQUE → override total
-        if is_ddos:
-            action = "BLOCK"
-            risk = "CRITICAL"
-
-        # 2️⃣ CAS ML attaque
-        elif verdict != "BENIGN":
-
-            if confidence >= THRESHOLD_HIGH:
-                action = "BLOCK"
-                risk = "HIGH"
-
-            elif confidence >= THRESHOLD_LOW:
-                action = "ALERT"
-                risk = "MEDIUM"
-
-            else:
-                action = "MONITOR"
-                risk = "LOW"
-
-        # 3️⃣ CAS comportement suspect
-        elif is_suspicious:
-            action = "ALERT"
-            risk = "MEDIUM"
-
-        # 4️⃣ CAS normal
-        else:
-            action = "ALLOW"
-            risk = "LOW"
-
-        # =========================
-        # 🔥 SCORE AMÉLIORÉ
-        # =========================
-        score = min(100, int(
-            (packets_s / 1_000_000) * 50 +   # poids + fort
-            abs(ratio - 1) * 25 +
-            (1 - confidence) * 25
-        ))
-
-        # =========================
-        # RESPONSE
-        # =========================
+        # -------- response --------
         return {
             "verdict": verdict,
             "confidence": f"{confidence:.2%}",
@@ -141,10 +209,13 @@ def predict(flow: NetworkFlow):
             "action": action,
             "details": {
                 "packets_per_sec": round(packets_s, 2),
-                "fwd_bwd_ratio": round(ratio, 2),
-                "flags": {
+                "fwd_bwd_ratio": round(
+                    ratio if ratio != float("inf") else 100, 2
+                ),
+                "behavior_flags": {
                     "ddos": is_ddos,
-                    "suspicious": is_suspicious
+                    "scan": is_scan,
+                    "bruteforce": is_bruteforce
                 }
             }
         }

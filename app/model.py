@@ -1,11 +1,20 @@
+# =========================
+# LIBRARIES
+# =========================
 import joblib
 import numpy as np
-import pandas as pd
 import os
 
-from app.config import *
+from app.config import (
+    MODEL_PATH,
+    SCALER_PATH,
+    LE_PATH,
+    FEATURE_PATH
+)
 
-
+# =========================
+# IDS MODEL CLASS
+# =========================
 class IDSModel:
 
     def __init__(self):
@@ -15,60 +24,31 @@ class IDSModel:
             self.le = joblib.load(LE_PATH)
             self.feature_names = joblib.load(FEATURE_PATH)
 
-            print("✅ IDS Model loaded successfully")
-
         except Exception as e:
-            raise RuntimeError(f"❌ Model loading failed: {e}")
+            raise RuntimeError(f"Erreur chargement modèle: {e}")
 
-    def predict(self, df: pd.DataFrame):
+    # =========================
+    # PREDICTION
+    # =========================
+    def predict(self, df):
 
         try:
-            # =========================
-            # VALIDATION INPUT
-            # =========================
-            if df is None or df.empty:
-                raise ValueError("Input dataframe is empty")
+            # -------- alignement features --------
+            df = df.reindex(columns=self.feature_names, fill_value=0)
 
-            # =========================
-            # ALIGNEMENT FEATURES (CRITIQUE)
-            # =========================
-            missing_cols = set(self.feature_names) - set(df.columns)
-
-            if missing_cols:
-                # on ajoute les colonnes manquantes
-                for col in missing_cols:
-                    df[col] = 0
-
-            df = df[self.feature_names]
-
-            # =========================
-            # SCALING
-            # =========================
+            # -------- scaling --------
             scaled = self.scaler.transform(df)
 
-            # =========================
-            # PREDICTION
-            # =========================
-            probs = self.model.predict_proba(scaled)
+            # -------- prediction --------
+            probs = self.model.predict_proba(scaled)[0]
 
-            # support batch + single
-            pred_idx = np.argmax(probs, axis=1)
-            confidences = np.max(probs, axis=1)
+            pred_idx = int(np.argmax(probs))
+            confidence = float(np.max(probs))  # ⚠️ FLOAT OBLIGATOIRE
 
-            verdicts = self.le.inverse_transform(pred_idx)
+            verdict = self.le.inverse_transform([pred_idx])[0]
 
-            # =========================
-            # FORMAT SORTIE
-            # =========================
-            results = []
-
-            for v, c in zip(verdicts, confidences):
-                results.append({
-                    "verdict": v,
-                    "confidence": float(c)
-                })
-
-            return results if len(results) > 1 else results[0]
+            return verdict, confidence
 
         except Exception as e:
-            raise RuntimeError(f"Prediction failed: {e}")
+            # fallback sécurité (important PME)
+            return "ERROR", 0.0
