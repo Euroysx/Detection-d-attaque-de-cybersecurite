@@ -11,7 +11,7 @@ st.markdown("Simule un flux réseau et détecte s'il est malveillant.")
 # =========================
 # LOAD MODEL
 # =========================
-model = joblib.load("ids_xgboost.pkl")
+model = joblib.load("ids_model.pkl")
 scaler = joblib.load("ids_scaler.pkl")
 le = joblib.load("ids_label_encoder.pkl")
 feature_names = joblib.load("feature_names.pkl")
