@@ -170,7 +170,8 @@ Ce système est conçu pour :
 
 ## 👨‍💻 Auteur
 
-Projet réalisé dans le cadre d’un capstone en cybersécurité.
+* Konan Yannis Yobonou
+* Mohand Ourabah Kherbouche
 
 ---
 
