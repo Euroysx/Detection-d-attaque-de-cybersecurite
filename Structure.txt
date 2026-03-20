@@ -18,3 +18,7 @@ Detection-d-attaque-de-cybersecurite/
 │   └── feature_names.pkl
 │
 ├── requirements.txt
+
+
+pipeline reproductive de la gestion des valeurs aberante
+
