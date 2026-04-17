@@ -1,0 +1,4 @@
+uvicorn main_final:app --host 0.0.0.0 --port 8000 --reload
+ 
+sudo python3 -m streamlit run app_hybrid.py --server.port 8501
+
