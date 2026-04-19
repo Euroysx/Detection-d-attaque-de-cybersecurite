@@ -1,24 +1,3 @@
-# ================================================================
-# IDS — FASTAPI BACKEND (VERSION FINALE)
-# Système de Détection d'Intrusions pour PME
-# ================================================================
-#
-# LANCEMENT :
-#   uvicorn main:app --reload --host 0.0.0.0 --port 8000
-#
-# ENDPOINTS :
-#   POST /predict         — Analyse un flux réseau unique (JSON)
-#   POST /predict/batch   — Analyse un fichier CSV de logs
-#   GET  /stats           — Statistiques globales
-#   GET  /history         — Historique complet (SQLite)
-#   GET  /history/recent  — 50 dernières alertes
-#   DELETE /history       — Réinitialiser l'historique
-#   GET  /health          — Santé de l'API
-#
-# AUTHENTIFICATION :
-#   (sauf /health qui est public)
-#
-# ================================================================
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,10 +18,6 @@ import json
 from datetime import datetime
 from collections import defaultdict
 
-# ================================================================
-# CLASSE IQRCapper — REQUISE POUR CHARGER ids_pipeline.pkl
-# ================================================================
-
 class IQRCapper(BaseEstimator, TransformerMixin):
     def __init__(self, factor=1.5):
         self.factor = factor
@@ -62,10 +37,6 @@ class IQRCapper(BaseEstimator, TransformerMixin):
             upper=self.upper_.values,
             axis=1
         ).values
-
-# ================================================================
-# CONFIGURATION
-# ================================================================
 
 MODEL_DIR         = os.getenv("MODEL_DIR", "./models")
 DEFAULT_THRESHOLD = 0.35
@@ -123,10 +94,6 @@ ACTIONS = {
     "Web Attack - XSS":          "Bloquer l'IP source. Verifier les entrees utilisateur.",
 }
 
-# ================================================================
-# LOGGING — Fichier de logs sur disque
-# ================================================================
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -137,16 +104,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("IDS")
 
-# ================================================================
-# SQLITE — Base de données persistante
-# ================================================================
-
-# Thread-local storage pour les connexions SQLite
 import threading
 _db_local = threading.local()
 
 def get_db():
-    """Connexion SQLite thread-locale avec WAL mode et timeout."""
     if not hasattr(_db_local, "conn") or _db_local.conn is None:
         conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
@@ -164,7 +125,6 @@ def close_db():
         _db_local.conn = None
 
 def db_execute(query, params=(), fetch=None, commit=False):
-    """Execute avec retry automatique sur database locked."""
     import time as _time
     for attempt in range(5):
         try:
@@ -179,14 +139,13 @@ def db_execute(query, params=(), fetch=None, commit=False):
         except sqlite3.OperationalError as e:
             if "locked" in str(e) and attempt < 4:
                 _time.sleep(0.05 * (attempt + 1))
-                close_db()  # reset connexion
+                close_db()
                 continue
             logger.error(f"SQLite error ({attempt+1}/5): {e}")
             raise
     return None
 
 def init_db():
-    """Initialise la base de données SQLite."""
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -214,11 +173,9 @@ def init_db():
             value INTEGER DEFAULT 0
         )
     """)
-    # Initialiser les compteurs si absents
     for key in ["total_analyzed", "total_attacks", "total_blocked"]:
         c.execute("INSERT OR IGNORE INTO stats (key, value) VALUES (?, 0)", (key,))
 
-    # Table IPs attaquantes + blacklist
     c.execute("""
         CREATE TABLE IF NOT EXISTS attacker_ips (
             ip           TEXT PRIMARY KEY,
@@ -235,9 +192,7 @@ def init_db():
     conn.close()
     logger.info(f"Base de donnees SQLite initialisee : {DB_PATH}")
 
-
 def db_upsert_attacker_ip(result: dict):
-    """Met à jour le profil de l'IP attaquante dans attacker_ips."""
     ip = result.get("source_ip")
     if not ip or not result.get("is_attack"):
         return
@@ -278,18 +233,14 @@ def db_upsert_attacker_ip(result: dict):
     except Exception as e:
         logger.error(f"Erreur upsert attacker_ip : {e}")
 
-
-# Queue d'insertions pour batching
 import queue as _queue
 _insert_queue = _queue.Queue()
 _batch_lock   = threading.Lock()
 
 def db_insert_alert(result: dict):
-    """Insère une alerte via queue — évite les locks SQLite."""
     _insert_queue.put(result)
 
 def _flush_insert_queue():
-    """Vide la queue et insère en batch dans une seule transaction."""
     if _insert_queue.empty():
         return
     items = []
@@ -338,20 +289,16 @@ def _flush_insert_queue():
             logger.error(f"Erreur SQLite insert batch ({attempt+1}/5): {e}")
             return
 
-
 def db_get_stats() -> dict:
-    """Récupère les statistiques depuis SQLite."""
     try:
         conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=10000")
         c = conn.cursor()
 
-        # Stats globales
         c.execute("SELECT key, value FROM stats")
         stats = {row[0]: row[1] for row in c.fetchall()}
 
-        # Stats par type d'attaque
         c.execute("""
             SELECT attack_type, COUNT(*) FROM alerts
             WHERE is_attack = 1
@@ -359,7 +306,6 @@ def db_get_stats() -> dict:
         """)
         by_type = {row[0]: row[1] for row in c.fetchall()}
 
-        # Stats par sévérité
         c.execute("""
             SELECT severity, COUNT(*) FROM alerts
             WHERE is_attack = 1
@@ -385,9 +331,7 @@ def db_get_stats() -> dict:
         logger.error(f"Erreur SQLite stats : {e}")
         return {}
 
-
 def db_get_history(limit: int = 100, attacks_only: bool = False, offset: int = 0) -> list:
-    """Récupère l'historique depuis SQLite avec pagination."""
     try:
         conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.execute("PRAGMA journal_mode=WAL")
@@ -403,7 +347,6 @@ def db_get_history(limit: int = 100, attacks_only: bool = False, offset: int = 0
         """, (limit, offset))
         rows = [dict(row) for row in c.fetchall()]
         conn.close()
-        # Convertir les entiers en booléens
         for r in rows:
             r["is_attack"] = bool(r["is_attack"])
             r["blocked"]   = bool(r["blocked"])
@@ -412,9 +355,7 @@ def db_get_history(limit: int = 100, attacks_only: bool = False, offset: int = 0
         logger.error(f"Erreur SQLite history : {e}")
         return []
 
-
 def db_reset():
-    """Réinitialise la base de données."""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -426,12 +367,7 @@ def db_reset():
     except Exception as e:
         logger.error(f"Erreur SQLite reset : {e}")
 
-# ================================================================
-# CHARGEMENT DES MODÈLES
-# ================================================================
-
 def load_models():
-    """Charge tous les modèles depuis le dossier models/."""
     models = {}
     try:
         iqr_bounds           = joblib.load(f"{MODEL_DIR}/ids_iqr_bounds.pkl")
@@ -452,13 +388,8 @@ def load_models():
         models = None
     return models
 
-# Initialisation
 init_db()
 MODELS = load_models()
-
-# ================================================================
-# RATE LIMITING
-# ================================================================
 
 _LOCAL = {"127.0.0.1", "::1"}
 
@@ -467,12 +398,6 @@ def _rate_key(request: Request) -> str:
     return "local" if ip in _LOCAL else ip
 
 limiter = Limiter(key_func=_rate_key)
-
-
-
-# ================================================================
-# SCHÉMAS PYDANTIC
-# ================================================================
 
 class NetworkFlow(BaseModel):
     destination_port:          float = Field(..., description="Port de destination")
@@ -526,17 +451,11 @@ class PredictionResult(BaseModel):
     dest_ip:        Optional[str]
     protocol:       Optional[str]
 
-# ================================================================
-# LOGIQUE DE PRÉDICTION
-# ================================================================
-
 def predict_flow(flow_values: list, meta: dict = None) -> dict:
-    """Prédit si un flux est une attaque et son type."""
     ts = datetime.now().isoformat()
 
     try:
         if MODELS is None:
-            # Mode démo
             import random
             classes     = list(SEVERITY.keys())
             attack_type = random.choice(classes)
@@ -546,13 +465,10 @@ def predict_flow(flow_values: list, meta: dict = None) -> dict:
         else:
             X = np.array(flow_values, dtype=float).reshape(1, -1)
 
-            # IQR Capping
             X_capped = np.clip(X, MODELS["iqr_lower"], MODELS["iqr_upper"])
 
-            # RobustScaler
             X_scaled = MODELS["scaler"].transform(X_capped)
 
-            # Prédiction binaire
             threshold = float(MODELS["threshold"])
             proba_bin = float(MODELS["xgb_bin"].predict_proba(X_scaled)[0, 1])
             is_attack = proba_bin >= threshold
@@ -562,8 +478,6 @@ def predict_flow(flow_values: list, meta: dict = None) -> dict:
                 attack_type = MODELS["le"].inverse_transform([pred_idx])[0]
                 attack_type = attack_type.encode("ascii", "ignore").decode("ascii").strip()
 
-                # Si multi-classe retourne BENIGN alors que binaire dit ATTACK
-                # prendre la 2e meilleure classe non-BENIGN
                 if attack_type == "BENIGN":
                     proba_multi = MODELS["xgb_multi"].predict_proba(X_scaled)[0]
                     classes     = MODELS["le"].classes_
@@ -580,7 +494,6 @@ def predict_flow(flow_values: list, meta: dict = None) -> dict:
 
     except Exception as e:
         logger.error(f"Erreur prediction : {e}")
-        # Fail-safe : en cas d'erreur on logue et retourne BENIGN
         attack_type = "BENIGN"
         is_attack   = False
         confidence  = 0.0
@@ -604,7 +517,6 @@ def predict_flow(flow_values: list, meta: dict = None) -> dict:
         "protocol":       meta.get("protocol")  if meta else None,
     }
 
-    # Log dans le fichier
     if is_attack:
         logger.warning(
             f"ATTAQUE DETECTEE | {attack_type} | {severity} | "
@@ -617,30 +529,16 @@ def predict_flow(flow_values: list, meta: dict = None) -> dict:
             f"{meta.get('source_ip','?')} -> {meta.get('dest_ip','?')}"
         )
 
-    # Sauvegarde SQLite
     db_insert_alert(result)
     db_upsert_attacker_ip(result)
-    # Flush immédiat pour les prédictions individuelles
     try: _flush_insert_queue()
     except: pass
 
     return result
 
-# ================================================================
-# APPLICATION FASTAPI
-# ================================================================
-
 app = FastAPI(
     title="IDS — Système de Détection d'Intrusions",
-    description="""
-## API de détection d'intrusions réseau pour PME
-
-**Pipeline** : `Flux -> IQR Capping -> RobustScaler -> XGBoost Binaire -> XGBoost Multi-classe`
-
-**Attaques détectables** : DDoS, DoS (GoldenEye, Hulk, Slowhttptest, Slowloris),
-FTP-Patator, SSH-Patator, Web Attack (Brute Force, SQL Injection, XSS),
-Bot, Infiltration, PortScan, Heartbleed
-    """,
+    description="EUROFLARE IDS — API de detection d'intrusions reseau",
     version="2.0.0",
 )
 
@@ -654,13 +552,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ================================================================
-# ENDPOINTS
-# ================================================================
-
 @app.get("/health", tags=["Système"])
 def health_check():
-    """Endpoint public — vérifie que l'API est opérationnelle."""
     return {
         "status":        "online",
         "models_loaded": MODELS is not None,
@@ -671,18 +564,12 @@ def health_check():
         "timestamp":     datetime.now().isoformat(),
     }
 
-
 @app.post("/predict", response_model=PredictionResult, tags=["Détection"])
 @limiter.limit("50000/minute")
 def predict_single(
     request: Request,
     flow: NetworkFlow
 ):
-    """
-    Analyse un flux réseau unique.
-
-    **Rate limit** : 60 requêtes/minute par IP.
-    """
     flow_values = [
         flow.destination_port,
         flow.flow_duration,
@@ -704,18 +591,12 @@ def predict_single(
     }
     return predict_flow(flow_values, meta)
 
-
 @app.post("/predict/batch", tags=["Détection"])
 @limiter.limit("50000/minute")
 async def predict_batch(
     request: Request,
     file: UploadFile = File(...)
 ):
-    """
-    Analyse un fichier CSV de logs réseau.
-
-    **Rate limit** : 10 uploads/minute par IP.
-    """
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Seuls les fichiers .csv sont acceptes.")
 
@@ -755,7 +636,6 @@ async def predict_batch(
     n_total  = len(df)
     ts_batch = datetime.now().isoformat()
 
-    # Prédiction vectorisée — 10-50x plus rapide que iterrows
     if MODELS is not None:
         X        = df[list(col_mapping.keys())].values.astype(float)
         X_capped = np.clip(X, MODELS["iqr_lower"], MODELS["iqr_upper"])
@@ -815,15 +695,12 @@ async def predict_batch(
         "results": results,
     }
 
-
 @app.get("/stats", tags=["Statistiques"])
 @limiter.limit("50000/minute")
 def get_stats(
     request: Request
 ):
-    """Statistiques globales depuis SQLite (persistantes)."""
     return db_get_stats()
-
 
 @app.get("/history", tags=["Historique"])
 @limiter.limit("50000/minute")
@@ -833,36 +710,27 @@ def get_history(
     offset: int = 0,
     attacks_only: bool = False
 ):
-    """Historique paginé. limit/offset pour paginer, attacks_only pour filtrer."""
     history = db_get_history(limit=limit, attacks_only=attacks_only)
     return {
         "count":   len(history),
         "history": history,
     }
 
-
 @app.get("/history/recent", tags=["Historique"])
 @limiter.limit("50000/minute")
 def get_recent_alerts(
     request: Request
 ):
-    """50 dernières attaques détectées."""
     alerts = db_get_history(limit=50, attacks_only=True)
     return {
         "count":  len(alerts),
         "alerts": alerts,
     }
 
-
 @app.delete("/history", tags=["Historique"])
 def reset_history():
-    """Réinitialise l'historique et les statistiques (SQLite)."""
     db_reset()
     return {"message": "Historique et statistiques reinitialises."}
-
-# ================================================================
-# ENDPOINTS — IPs ATTAQUANTES + BLACKLIST (amélioration #33)
-# ================================================================
 
 @app.get("/attacker-ips", tags=["Blacklist"])
 @limiter.limit("50000/minute")
@@ -871,7 +739,6 @@ def get_attacker_ips(
     blacklisted_only: bool = False,
     limit: int = 200,
 ):
-    """Liste toutes les IPs attaquantes avec leur profil (count, types, sévérité)."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -893,14 +760,11 @@ def get_attacker_ips(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/attacker-ips/{ip}/blacklist", tags=["Blacklist"])
 def blacklist_ip(ip: str):
-    """Ajoute une IP à la blacklist."""
     try:
         conn = sqlite3.connect(DB_PATH)
         now  = datetime.now().isoformat()
-        # Insérer si pas encore connue, sinon update
         conn.execute("""
             INSERT INTO attacker_ips (ip, first_seen, last_seen, blacklisted, blacklisted_at)
             VALUES (?,?,?,1,?)
@@ -913,10 +777,8 @@ def blacklist_ip(ip: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.delete("/attacker-ips/{ip}/blacklist", tags=["Blacklist"])
 def unblacklist_ip(ip: str):
-    """Retire une IP de la blacklist."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute(
@@ -929,10 +791,8 @@ def unblacklist_ip(ip: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.delete("/attacker-ips/blacklist/all", tags=["Blacklist"])
 def clear_blacklist():
-    """Vide toute la blacklist."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute("UPDATE attacker_ips SET blacklisted=0, blacklisted_at=NULL")

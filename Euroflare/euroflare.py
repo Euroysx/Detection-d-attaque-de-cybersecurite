@@ -1,5 +1,5 @@
 # ================================================================
-# IDS — STREAMLIT DASHBOARD v3.0
+# EUROFLARE — STREAMLIT DASHBOARD v3.0
 # 20 AMÉLIORATIONS INTÉGRÉES
 # 1.  Cache TTL (Redis-like, sans dépendance)
 # 2.  Géolocalisation IP réelle (ip-api.com)
@@ -22,7 +22,7 @@
 # 19. Mode capture live (Scapy thread)
 # 20. Score de risque composite par incident
 # ================================================================
-# LANCEMENT : streamlit run app6.py
+# LANCEMENT : streamlit run euroflare.py
 # PRÉREQUIS : pip install streamlit requests pandas plotly scapy
 #             uvicorn main:app --reload  (API sur localhost:8000)
 # ================================================================
@@ -37,7 +37,7 @@ from collections import defaultdict, deque
 import plotly.express as px
 import plotly.graph_objects as go
 
-# ── Moteur IDS Hybride ─────────────────────────────────────────────
+#  Moteur IDS Hybride 
 try:
     from hybrid_ids_engine import get_engine, start_engine, stop_engine
     HYBRID_AVAILABLE = True
@@ -101,7 +101,7 @@ def db_remove_blocked(ip: str):
         conn.commit(); conn.close()
     except: pass
 CHUNK_SIZE = 10000
-SECRET_KEY = "ids_dashboard_v3_secret_2025"
+SECRET_KEY = "euroflare_ids_v3_secret_2025"
 
 SEVERITY_COLORS = {
     "INFO":     "#00C8A0",
@@ -226,7 +226,7 @@ def send_slack(webhook_url, attack_type, severity, source_ip, confidence):
             "color": color,
             "title": f"[!] {severity} — {attack_type}",
             "text":  f"Source: `{source_ip}` · Confiance: {confidence*100:.1f}%\nTimestamp: {datetime.now().strftime('%H:%M:%S')}",
-            "footer": "IDS Dashboard v3",
+            "footer": "EUROFLARE IDS v3",
             "ts": int(time.time())
         }]}, timeout=3)
     except Exception:
@@ -237,7 +237,7 @@ def send_telegram(token: str, chat_id: str, attack_type, severity, source_ip, co
     if not token or not chat_id:
         return
     try:
-        sev_icon = {"CRITICAL":"🚨","HIGH":"⚠️","MEDIUM":"⚡","INFO":"ℹ️"}.get(severity,"🔔")
+        sev_icon = {"CRITICAL":"[CRITICAL]","HIGH":"[HIGH]","MEDIUM":"[MEDIUM]","INFO":"[INFO]"}.get(severity,"[ALERTE]")
         now_str = datetime.now().strftime('%H:%M:%S')
         conf_str = f"{confidence*100:.1f}%"
         text = (
@@ -269,7 +269,7 @@ def send_discord(webhook_url, attack_type, severity, source_ip, confidence):
                 {"name":"Confiance",  "value":f"{confidence*100:.1f}%","inline":True},
                 {"name":"Heure",      "value":datetime.now().strftime('%H:%M:%S'),"inline":True},
             ],
-            "footer": {"text":"IDS Dashboard v3"},
+            "footer": {"text":"EUROFLARE IDS v3"},
         }]}, timeout=3)
     except Exception:
         pass
@@ -624,7 +624,7 @@ ATTACK_ENCYCLOPEDIA = {
 # PAGE CONFIG
 # ================================================================
 
-st.set_page_config(page_title="IDS v3 — Supervision Réseau", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="EUROFLARE — Detection d'Intrusion", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -726,7 +726,7 @@ def cef_format(row) -> str:
     sev = {"CRITICAL":"10","HIGH":"8","MEDIUM":"5","INFO":"2"}.get(row.get("severity","INFO"),"5")
     src = row.get("source_ip","0.0.0.0")
     conf= int(float(row.get("confidence",0)) * 100)
-    return (f"CEF:0|Anthropic|IDS-Dashboard|3.0|{typ.replace(' ','_')}|{typ}|{sev}|"
+    return (f"CEF:0|Anthropic|EUROFLARE|3.0|{typ.replace(' ','_')}|{typ}|{sev}|"
             f"src={src} sev={row.get('severity','INFO')} conf={conf} ts={ts}")
 
 def process_csv_chunked(df, progress_bar, status_text):
@@ -925,7 +925,7 @@ def build_threat_map(country_counts, recent_attacks, target=None, local_attacks=
             lats.append(lat); lons.append(lon)
         arcs.append({"lats":lats,"lons":lons,"col":col})
 
-    # ── Arcs LOCAUX : boucle autour de la cible pour les IPs privées ──
+    #  Arcs LOCAUX : boucle autour de la cible pour les IPs privées 
     arc_colors_local = {"CRITICAL":"#FF2D55","HIGH":"#FF6B35","MEDIUM":"#F5A623","INFO":"#00E5C0"}
     drawn_local = set()
     for atk in local_attacks[:10]:
@@ -963,7 +963,7 @@ def build_threat_map(country_counts, recent_attacks, target=None, local_attacks=
             lon=[tgt["lon"]], lat=[tgt["lat"]], mode="markers",
             marker=dict(size=28, color="rgba(0,0,0,0)",
                         line=dict(color=pulse_col, width=3)),
-            hovertemplate=f"<b>⚠ RÉSEAU LOCAL</b><br>{n_loc} attaque(s) interne(s)<extra></extra>",
+            hovertemplate=f"<b>[!] RÉSEAU LOCAL</b><br>{n_loc} attaque(s) interne(s)<extra></extra>",
             showlegend=False))
         # Anneau intermédiaire
         fig.add_trace(go.Scattergeo(
@@ -1081,14 +1081,13 @@ def unblock_ip(ip: str) -> bool:
 # ================================================================
 
 # Auth désactivée — accès direct
-if "auth_token" not in st.session_state:
+if not st.session_state.get("auth_token"):
     import streamlit.components.v1 as _cmp
 
-    # CSS pour cacher tout sauf le composant HTML
     st.markdown("""<style>
 [data-testid="stHeader"]{display:none!important;}
 [data-testid="stSidebar"]{display:none!important;}
-.block-container{padding:0!important;max-width:100%!important;}
+.main .block-container{padding:0!important;max-width:100%!important;margin:0!important;}
 .stForm{position:fixed!important;bottom:0!important;left:0!important;opacity:0!important;height:1px!important;overflow:hidden!important;}
 </style>""", unsafe_allow_html=True)
 
@@ -1209,6 +1208,19 @@ function login(){
     st.stop()
 
 # Vérifier le token à chaque rerun
+# Réinitialiser le CSS du block-container après login (override le CSS de la page login)
+st.markdown("""<style>
+.main .block-container {
+    padding-top: 1.5rem !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+}
+[data-testid="stSidebar"] { display: flex !important; }
+[data-testid="stHeader"]  { display: flex !important; }
+</style>""", unsafe_allow_html=True)
+
 auth_user = st.session_state.get("auth_user", "admin")
 auth_role = st.session_state.get("auth_role", "admin")
 available_pages = ROLE_PAGES.get(auth_role, ROLE_PAGES["viewer"])
@@ -1229,7 +1241,7 @@ if "roc_data" not in st.session_state:
     st.session_state["roc_data"] = []  # liste de (confidence, is_attack_true)
 
 with st.sidebar:
-    st.markdown(f"## IDS Dashboard v3")
+    st.markdown(f"## EUROFLARE IDS v3")
     role_label = {"admin":" Admin","analyst":" Analyste","viewer":" Observateur"}.get(auth_role,"")
     st.markdown(f'<div style="font-family:\'Share Tech Mono\',monospace;font-size:0.72rem;color:#4D7FA8;margin-top:-8px;margin-bottom:8px;">{role_label} · {auth_user}</div>', unsafe_allow_html=True)
     st.markdown("---")
@@ -1267,7 +1279,7 @@ with st.sidebar:
     st.markdown("---")
 
     # Amélioration #4 — Config notifications
-    with st.expander("🔔 Notifications (Slack / Discord / Telegram)", expanded=False):
+    with st.expander(" Notifications (Slack / Discord / Telegram)", expanded=False):
         slack_wh = st.text_input("Slack Webhook URL", value=st.session_state["notif_config"].get("slack",""),
                                   placeholder="https://hooks.slack.com/...", type="password", key="slack_inp")
         disc_wh  = st.text_input("Discord Webhook URL", value=st.session_state["notif_config"].get("discord",""),
@@ -1340,7 +1352,7 @@ if page == "Tableau de bord":
         risk_color = "#FF2D55" if risk_score>=70 else ("#F5A623" if risk_score>=40 else "#00C8A0")
         risk_label = "CRITIQUE" if risk_score>=70 else ("ÉLEVÉ" if risk_score>=40 else "FAIBLE")
         import streamlit.components.v1 as _comp
-        _comp.html(f"""<div style="background:#0A0A0A;border:1px solid #1C2B40;border-radius:4px;padding:16px 24px;margin-bottom:16px;display:flex;align-items:center;gap:24px;">
+        st.markdown(f"""<div style="background:#0A0A0A;border:1px solid #1C2B40;border-radius:4px;padding:16px 24px;margin-bottom:16px;display:flex;align-items:center;gap:24px;">
           <svg width="100" height="100" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="42" fill="none" stroke="#1C2B40" stroke-width="10"/>
             <circle cx="50" cy="50" r="42" fill="none" stroke="{risk_color}" stroke-width="10"
@@ -1354,7 +1366,7 @@ if page == "Tableau de bord":
             <div style="font-family:'Courier New',monospace;font-size:0.72rem;color:#4D7FA8;margin-top:4px;">{n_crit} CRITICAL &nbsp;·&nbsp; {n_high} HIGH &nbsp;·&nbsp; {rate*100:.1f}% du trafic</div>
           </div>
           <div style="flex:1;height:2px;background:linear-gradient(90deg,{risk_color}22,{risk_color});border-radius:2px;margin-left:12px;"></div>
-        </div>""", height=118)
+        </div>""", unsafe_allow_html=True)
 
     if stats:
         safe = stats.get("total_analyzed",0)-stats.get("total_attacks",0)
@@ -1395,7 +1407,7 @@ if page == "Tableau de bord":
     else:
         st.info("Aucune alerte — API hors ligne ou aucune attaque détectée.")
 
-    # ── Dashboard amélioré — Timeline + Top Attaques + Heatmap ──
+    #  Dashboard amélioré — Timeline + Top Attaques + Heatmap 
     st.markdown('<div class="section-title">Analyse en temps réel</div>', unsafe_allow_html=True)
 
     _history_full = call_api("/history?limit=500&attacks_only=false") or {}
@@ -1408,7 +1420,7 @@ if page == "Tableau de bord":
         _df_full["timestamp"] = _pd2.to_datetime(_df_full["timestamp"], errors="coerce")
         _df_full["confidence"] = _pd2.to_numeric(_df_full.get("confidence", 0), errors="coerce").fillna(0)
 
-        # ── Ligne 1 : Timeline des attaques + Donut sévérité ──
+        #  Ligne 1 : Timeline des attaques + Donut sévérité 
         _col_tl, _col_dn = st.columns([3, 1])
 
         with _col_tl:
@@ -1469,7 +1481,7 @@ if page == "Tableau de bord":
                 st.plotly_chart(_fig_dn, use_container_width=True,
                                 config={"displayModeBar": False})
 
-        # ── Ligne 2 : Top types d'attaques + Sources IP ──
+        #  Ligne 2 : Top types d'attaques + Sources IP 
         _col_top, _col_src = st.columns(2)
 
         with _col_top:
@@ -1631,7 +1643,7 @@ elif page == "Threat Map Live":
     if total_displayed - n_loc > 0:
         _parts.append(f"{total_displayed - n_loc:,} attaques externes · {n_cty} pays")
     if n_loc > 0:
-        _parts.append(f"⚠ {n_loc} attaque(s) INTERNE(S) — réseau local")
+        _parts.append(f"[!] {n_loc} attaque(s) INTERNE(S) — réseau local")
     _label = " · ".join(_parts) if _parts else "0 attaque — en attente de données"
     st.markdown(
         f'<div style="font-family:Share Tech Mono,monospace;font-size:0.73rem;'
@@ -1787,7 +1799,7 @@ elif page == "Analyse Flux":
                 f'<div style="margin-top:12px;font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#4D7FA8;">'
                 f'Confiance API : <b style="color:{bar_color};">{raw_conf*100:.1f}%</b> &nbsp;|&nbsp; '
                 f'Seuil actif : <b style="color:#00C8FF;">{thresh*100:.0f}%</b> &nbsp;|&nbsp; '
-                f'{"⬆ confiance AU-DESSUS du seuil → ATTAQUE" if result["is_attack"] else "⬇ confiance EN-DESSOUS du seuil → BLOQUÉ PAR SEUIL"}'
+                f'{" confiance AU-DESSUS du seuil → ATTAQUE" if result["is_attack"] else " confiance EN-DESSOUS du seuil → BLOQUÉ PAR SEUIL"}'
                 f'</div>'
                 f'<div style="background:#1C2B40;border-radius:3px;height:8px;margin-top:6px;position:relative;">'
                 f'<div style="background:{bar_color};width:{conf_pct}%;height:8px;border-radius:3px;transition:width 0.4s;"></div>'
@@ -2090,7 +2102,7 @@ elif page == "Historique":
         leef_lines = []
         for r in df_hist.to_dict(orient="records"):
             if r.get("is_attack",True):
-                leef_lines.append(f"LEEF:2.0|Anthropic|IDS-Dashboard|3.0|{r.get('attack_type','Unknown')}|devTime={str(r.get('timestamp',''))[:19]}\tsrc={r.get('source_ip','0.0.0.0')}\tsev={r.get('severity','INFO')}")
+                leef_lines.append(f"LEEF:2.0|Anthropic|EUROFLARE|3.0|{r.get('attack_type','Unknown')}|devTime={str(r.get('timestamp',''))[:19]}\tsrc={r.get('source_ip','0.0.0.0')}\tsev={r.get('severity','INFO')}")
         st.download_button("Exporter LEEF (IBM QRadar)", "\n".join(leef_lines),
                            f"ids_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.leef","text/plain", width='stretch')
 
@@ -2326,11 +2338,11 @@ elif page == "Modèle XGBoost":
             try:
                 r = call_api("/thresholds", method="POST", data={"thresholds": updated})
                 if r:
-                    st.success(f"✅ Seuils mis à jour et envoyés à l'API.")
+                    st.success(f"Seuils mis à jour et envoyés à l'API.")
                 else:
-                    st.success("✅ Seuils sauvegardés localement — appliqués immédiatement.")
+                    st.success("Seuils sauvegardés localement — appliqués immédiatement.")
             except:
-                st.success("✅ Seuils sauvegardés localement — appliqués immédiatement.")
+                st.success("Seuils sauvegardés localement — appliqués immédiatement.")
 
             st.markdown(f'<div class="info-box">'
                 f'<strong style="color:#00C8FF;">Vérification :</strong> Le seuil <strong>DDoS={updated.get("DDoS",0.55):.2f}</strong> '
@@ -2492,7 +2504,7 @@ elif page == "Simulateur d'Attaques":
 
     sim_noise = st.slider("Bruit (variance des features, %)", 0, 40, 10, key="sim_noise")
 
-    if st.button("🚀 Lancer la simulation", type="primary", width='stretch', key="sim_run"):
+    if st.button(" Lancer la simulation", type="primary", width='stretch', key="sim_run"):
         base_params = SIMUL_SCENARIOS[sim_type].copy()
         thresholds  = st.session_state.get("adaptive_thresholds", DEFAULT_THRESHOLDS)
         thresh      = thresholds.get(sim_type, thresholds.get("default", 0.55))
@@ -2521,7 +2533,7 @@ elif page == "Simulateur d'Attaques":
                     "Type API":     raw_type,
                     "Confiance":    f"{raw_conf*100:.1f}%",
                     "Seuil":        f"{thresh:.2f}",
-                    "Détecté":      "✅ OUI" if detected else "❌ NON",
+                    "Détecté":      "OUI" if detected else "NON",
                     "Sévérité":     result.get("severity", "—"),
                 })
                 if detected:
@@ -2535,14 +2547,14 @@ elif page == "Simulateur d'Attaques":
 
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Flux envoyés",    len(results_sim))
-            c2.metric("Détectés ✅",     n_det,  delta=f"{n_det/len(results_sim)*100:.0f}%")
-            c3.metric("Manqués ❌",      n_miss, delta=f"-{n_miss/len(results_sim)*100:.0f}%" if n_miss else "0%", delta_color="inverse")
+            c2.metric("Détectés",     n_det,  delta=f"{n_det/len(results_sim)*100:.0f}%")
+            c3.metric("Manqués",      n_miss, delta=f"-{n_miss/len(results_sim)*100:.0f}%" if n_miss else "0%", delta_color="inverse")
             c4.metric("Seuil utilisé",   f"{thresh:.2f}")
 
             if n_miss > 0:
-                st.warning(f"⚠ {n_miss} flux non détectés — essayez d\'abaisser le seuil {sim_type} dans **Modèle XGBoost → Seuils adaptatifs**.")
+                st.warning(f"{n_miss} flux non détectés — essayez d\'abaisser le seuil {sim_type} dans **Modèle XGBoost → Seuils adaptatifs**.")
             else:
-                st.success(f"✅ Tous les flux détectés ! Le modèle reconnaît bien les {sim_type}.")
+                st.success(f"Tous les flux détectés ! Le modèle reconnaît bien les {sim_type}.")
 
             st.markdown('<div class="section-title">Résultats détaillés</div>', unsafe_allow_html=True)
             st.dataframe(df_sim, use_container_width=True, hide_index=True)
@@ -2901,7 +2913,7 @@ INCIDENT :
 - IP destination : {incident.get('dest_ip','N/A')}
 - Confiance du modèle : {incident.get('confidence',0)*100:.1f}%
 - Timestamp : {incident.get('timestamp')}
-- Action recommandée par l'IDS : {incident.get('action')}
+- Action recommandée par EUROFLARE : {incident.get('action')}
 
 Fournis en français :
 1. EXPLICATION : Comment fonctionne cette attaque techniquement ?
@@ -3084,7 +3096,7 @@ function requestNotifPermission() {
     Notification.requestPermission().then(p => {
         if (p === "granted") {
             document.getElementById('notif-status').textContent = "[OK] Notifications activées !";
-            new Notification("IDS Dashboard v3", {
+            new Notification("EUROFLARE IDS v3", {
                 body: "Notifications activées. Vous serez alerté en temps réel.",
                 icon: "https://cdn-icons-png.flaticon.com/512/2716/2716652.png"
             });
@@ -3296,7 +3308,7 @@ elif page == "Intelligence Menaces":
                                   value=_last_attack_ip,
                                   placeholder="185.220.101.45", key="vt_ip")
         if _last_attack_ip:
-            st.caption(f"💡 Dernière IP attaquante détectée : {_last_attack_ip}")
+            st.caption(f" Dernière IP attaquante détectée : {_last_attack_ip}")
 
         if st.button("Vérifier sur VirusTotal", width='stretch', key="btn_vt") and ip_check:
             if not vt_key:
@@ -3540,7 +3552,7 @@ elif page == "Rapport PDF":
 
                 elements.append(Spacer(1,20))
                 elements.append(HRFlowable(width="100%",thickness=0.5,color=rl_colors.HexColor("#D0D8E8")))
-                elements.append(Paragraph("Rapport généré automatiquement par IDS Dashboard v3 · XGBoost · CIC-IDS2017",
+                elements.append(Paragraph("Rapport généré automatiquement par EUROFLARE IDS v3 · XGBoost · CIC-IDS2017",
                     ParagraphStyle("footer",parent=styles["Normal"],fontSize=7,textColor=rl_colors.HexColor("#999999"),alignment=TA_CENTER,spaceBefore=6)))
                 doc.build(elements)
                 pdf_bytes = buffer.getvalue()
@@ -3582,7 +3594,7 @@ elif page == "Rapport PDF":
                         msg = MIMEMultipart()
                         msg["From"]    = smtp_user
                         msg["To"]      = smtp_to
-                        msg["Subject"] = "IDS Dashboard v3 — Test de configuration email"
+                        msg["Subject"] = "EUROFLARE IDS v3 — Test de configuration email"
                         msg.attach(MIMEText(f"Configuration email fonctionnelle.\nServeur : {smtp_host}:{smtp_port}\nTimestamp : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "plain"))
                         with smtplib.SMTP(smtp_host, smtp_port) as srv:
                             srv.starttls()

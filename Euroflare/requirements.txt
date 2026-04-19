@@ -1,8 +1,73 @@
-fastapi
-uvicorn
-pydantic
-joblib
-pandas
-numpy
-scikit-learn
-xgboost
+# ================================================================
+# EUROFLARE IDS v3 — Requirements
+# Compatible Windows / Linux / macOS
+# Python 3.10+
+#
+# Installation complete :
+#   pip install -r requirements.txt
+#
+# Sur Windows, scapy necessite Npcap :
+#   https://npcap.com/#download
+# ================================================================
+
+
+# ----------------------------------------------------------------
+# API BACKEND — main.py
+# ----------------------------------------------------------------
+
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0.0
+slowapi>=0.1.9
+pandas>=2.0.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+xgboost>=2.0.0
+joblib>=1.3.0
+
+
+# ----------------------------------------------------------------
+# DASHBOARD — euroflare.py
+# ----------------------------------------------------------------
+
+streamlit>=1.35.0
+requests>=2.31.0
+plotly>=5.20.0
+
+# Rapport PDF (page Rapport PDF)
+reportlab>=4.1.0
+
+# Lecture PCAP (page Upload CSV/PCAP)
+# Sur Windows : installer Npcap AVANT scapy
+# https://npcap.com/#download
+scapy>=2.5.0
+
+# Planification email (optionnel — page Rapport PDF)
+apscheduler>=3.10.0
+
+
+# ----------------------------------------------------------------
+# SIMULATEUR D'ATTAQUES — attaque.py
+# ----------------------------------------------------------------
+# Seul 'requests' est requis, tout le reste est stdlib Python
+
+# requests deja liste ci-dessus
+
+
+# ----------------------------------------------------------------
+# STDLIB (deja inclus dans Python, aucune installation requise)
+# ----------------------------------------------------------------
+# socket, threading, time, random, hashlib, hmac, base64
+# json, io, os, math, sqlite3, logging, tempfile
+# subprocess, argparse, pathlib, queue
+# datetime, collections, concurrent.futures, smtplib
+# email, secrets, typing
+
+
+# ----------------------------------------------------------------
+# OPTIONNEL — Analyste IA (page Analyste IA)
+# ----------------------------------------------------------------
+# Necessite Ollama installe separement (pas via pip) :
+#   Windows/Linux/macOS : https://ollama.com/download
+#   Puis : ollama pull llama3
+#   Puis : ollama serve
