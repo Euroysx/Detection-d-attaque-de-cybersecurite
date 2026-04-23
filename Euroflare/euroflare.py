@@ -1,32 +1,3 @@
-# ================================================================
-# EUROFLARE — STREAMLIT DASHBOARD v3.0
-# 20 AMÉLIORATIONS INTÉGRÉES
-# 1.  Cache TTL (Redis-like, sans dépendance)
-# 2.  Géolocalisation IP réelle (ip-api.com)
-# 3.  JWT multi-utilisateurs avec rôles
-# 4.  Notifications Slack / Discord webhook
-# 5.  Heuristiques client-side (sans API)
-# 6.  Corrélation d'alertes & page Incidents
-# 7.  PcapReader streaming (gros fichiers)
-# 8.  Seuils adaptatifs par type d'attaque
-# 9.  Courbe ROC + AUC live
-# 10. Sankey type → sévérité → action
-# 11. Timeline rangeslider interactive
-# 12. Export CEF/LEEF (Splunk / QRadar)
-# 13. Faux-positifs labellisation (Online Learning UI)
-# 14. Choroplèthe animée (30 dernières minutes)
-# 15. Simulateur d'attaques synthétiques
-# 16. Auto-blocage IP avec liste de gestion
-# 17. Config email + Rapport PDF planifié
-# 18. Stats base de données (SQLite-ready)
-# 19. Mode capture live (Scapy thread)
-# 20. Score de risque composite par incident
-# ================================================================
-# LANCEMENT : streamlit run euroflare.py
-# PRÉREQUIS : pip install streamlit requests pandas plotly scapy
-#             uvicorn main:app --reload  (API sur localhost:8000)
-# ================================================================
-
 import streamlit as st
 import requests
 import pandas as pd
@@ -2823,7 +2794,7 @@ elif page == "Blacklist IPs":
 # ================================================================
 
 elif page == "Analyste IA":
-    st.markdown('<div class="ids-header"><h1>Analyste IA</h1><p>OLLAMA · LLAMA3.2 · ANALYSE EN LANGAGE NATUREL · 100% LOCAL</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ids-header"><h1>Analyste IA</h1><p>OLLAMA · LLAMA3.8 · ANALYSE EN LANGAGE NATUREL · 100% LOCAL</p></div>', unsafe_allow_html=True)
 
     st.markdown('''<div class="info-box">
         <strong style="color:#00C8FF;">Analyste IA local</strong> — Powered by <strong>Ollama + Llama3:8b</strong> (100% local, aucune donnée ne sort).<br>
