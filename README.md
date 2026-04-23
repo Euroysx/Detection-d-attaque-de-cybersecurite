@@ -2,6 +2,7 @@
 
 Systeme de Detection d'Intrusions hybride developpe dans le cadre d'un projet Capstone 2026 en cybersecurite. EUROFLARE combine un modele XGBoost entraine sur le dataset CIC-IDS2017 et un Isolation Forest pour detecter les attaques reseau connues ainsi que les menaces inconnues en temps reel.
 
+lien steamlit: https://detection-d-attaque-de-cybersecurite-mxlodhzrxnydappuoz3rg8.streamlit.app/
 ---
 
 ## Architecture generale
